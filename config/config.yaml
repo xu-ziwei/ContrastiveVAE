@@ -1,0 +1,11 @@
+data_dir: "D:/Ziwei/LVAE/data"
+metadata_file: "segmentation_metadata_track_ID.csv"
+segmentation_file: "segmentation_resized_data_20_64_64_track_ID.tif"
+model_dir: "D:/Ziwei/LVAE/model"
+log_dir: "D:/Ziwei/LVAE/logs"
+latent_dim: 16
+beta: 5.0
+gamma: 0.1
+epochs: 50
+batch_size: 32
+subset_ratio: None
