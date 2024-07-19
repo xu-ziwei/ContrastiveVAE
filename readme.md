@@ -1,4 +1,4 @@
-# LVAE
+# contrastive_VAE
 
 ## Introduction
 
@@ -20,3 +20,16 @@ LVAE/
 ├── .gitignore
 ├── README.md
 └── requirements.txt
+
+The data flppws
+data.h5
+├── train
+│   ├── segmentation_data (n,12,100,100) np.array
+│   ├── point_clouds (n,1024,3) np.array
+│   ├── normals (n,1024,3) np.array
+│   └── metadata (n,6) string
+└── test
+    ├── segmentation_data
+    ├── point_clouds
+    ├── normals
+    └── metadata
