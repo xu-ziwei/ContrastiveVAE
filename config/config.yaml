@@ -1,11 +1,37 @@
-data_dir: "D:/Ziwei/LVAE/data"
-metadata_file: "segmentation_metadata_track_ID.csv"
-segmentation_file: "segmentation_resized_data_20_64_64_track_ID.tif"
-model_dir: "D:/Ziwei/LVAE/model"
-log_dir: "D:/Ziwei/LVAE/logs"
-latent_dim: 16
-beta: 5.0
-gamma: 0.1
-epochs: 50
-batch_size: 32
-subset_ratio: None
+device: 'cuda'  # or 'cpu' if you do not have a GPU
+experiment_dir: './experiments/'
+
+data:
+  path: 'D:/Ziwei/Github/data/data.h5'
+
+loader:
+  batch_size: 32
+  shuffle: True
+
+model:
+  name: 'ContrastiveVAE'
+  kwargs:
+    input_dim: 3072  # This is 1024*3
+    latent_dim: 128
+    projection_dim: 64
+    k: 20
+    emb_dims: 1024
+
+optimizer:
+  name: 'Adam'
+  kwargs:
+    lr: 0.001
+    weight_decay: 0.0001
+
+criterion:
+  name: 'NTXentLoss'
+  temperature: 0.5
+
+training:
+  epochs: 100
+  validate_every: 1
+  checkpoint_every: 5
+
+tensorboard:
+  log_dir: 'D:/Ziwei/Github/experiments/tensorboard'
+

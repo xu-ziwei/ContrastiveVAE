@@ -21,7 +21,7 @@ LVAE/
 ├── README.md
 └── requirements.txt
 
-The data flppws
+The data follows
 data.h5
 ├── train
 │   ├── segmentation_data (n,12,100,100) np.array
@@ -33,3 +33,4 @@ data.h5
     ├── point_clouds
     ├── normals
     └── metadata
+```
