@@ -29,7 +29,8 @@ class ContrastiveVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-        return self.decoder(z)
+        x = self.decoder(z)
+        return x.view(-1, 3, 1024)
 
     def forward(self, x):
         mu, logvar = self.encode(x)

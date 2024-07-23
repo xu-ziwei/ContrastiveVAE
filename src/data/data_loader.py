@@ -1,25 +1,30 @@
+import h5py
+import io
+import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-import h5py
-import pandas as pd
-import numpy as np
-import io
+from data.augmentation import random_transform
 
 class PointCloudDataset(Dataset):
-    def __init__(self, point_clouds, labels, transform=None):
+    def __init__(self, point_clouds, labels, augmentations=None):
         self.point_clouds = point_clouds
         self.labels = labels
-        self.transform = transform
+        self.augmentations = augmentations
 
     def __len__(self):
         return len(self.point_clouds)
 
     def __getitem__(self, idx):
-        points = self.point_clouds[idx]
+        point_cloud = self.point_clouds[idx]
         label = self.labels[idx]
-        if self.transform:
-            points = self.transform(points)
-        return {'points': torch.tensor(points, dtype=torch.float32), 'label': torch.tensor(label, dtype=torch.long)}
+
+        if self.augmentations:
+            augmented_pc1 = self.augmentations(point_cloud)
+            augmented_pc2 = self.augmentations(point_cloud)
+            return (point_cloud, augmented_pc1, augmented_pc2), label
+        else:
+            return point_cloud, label
 
 def load_data_from_h5(filename):
     with h5py.File(filename, 'r') as f:
@@ -40,11 +45,11 @@ def load_data_from_h5(filename):
         
     return (train_point_clouds, test_point_clouds, train_labels, test_labels)
 
-def get_data_loaders(train_point_clouds, train_labels, test_point_clouds, test_labels, batch_size, num_workers=4, shuffle=True):
-    train_dataset = PointCloudDataset(train_point_clouds, train_labels)
-    test_dataset = PointCloudDataset(test_point_clouds, test_labels)
+def get_data_loaders(train_point_clouds, train_labels, test_point_clouds, test_labels, batch_size=32, augmentations=None):
+    train_dataset = PointCloudDataset(train_point_clouds, train_labels, augmentations=augmentations)
+    test_dataset = PointCloudDataset(test_point_clouds, test_labels, augmentations=None)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
-    val_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    
-    return train_loader, val_loader
+    return train_loader, test_loader

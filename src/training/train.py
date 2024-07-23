@@ -5,13 +5,12 @@ import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from models.contrastive_vae import ContrastiveVAE
-from data.data_loader import get_data_loaders, load_data_from_h5
+from data.data_loader import load_data_from_h5, get_data_loaders
 from pytorch_metric_learning import losses
 
 class ShapeTrainer:
 
     def __init__(self, config):
-        super().__init__()
         self.config = config
         self.device = torch.device(config['device'])
         self.ckpt_dir = os.path.join(config['experiment_dir'], 'checkpoints')
@@ -40,11 +39,7 @@ class ShapeTrainer:
         emb_dims = self.config['model']['kwargs']['emb_dims']
 
         self.model = ContrastiveVAE(input_dim=input_dim, latent_dim=latent_dim, projection_dim=projection_dim, k=k, emb_dims=emb_dims)
-        if torch.cuda.device_count() > 1:
-            self.model = torch.nn.DataParallel(self.model, device_ids=[i for i in range(torch.cuda.device_count())])
-            self.model.cuda()
-        else:
-            self.model = self.model.to(self.device)
+        self.model = self.model.to(self.device)
 
         optimizer_class = getattr(torch.optim, self.config['optimizer']['name'])
         self.optimizer = optimizer_class(self.model.parameters(), **self.config['optimizer']['kwargs'])
@@ -69,18 +64,13 @@ class ShapeTrainer:
         self.model.train()
         for iteration, data in enumerate(tqdm(self.train_loader, desc='Iteration')):
             points, labels = data['points'].to(self.device), data['label'].to(self.device)
-            points = points.view(points.size(0), -1)  # Flatten the point cloud data
             self.optimizer.zero_grad()
             
             reconstructed, mu, logvar, projected = self.model(points)
             
-            # Compute reconstruction loss and KL divergence
             vae_loss = self.model.loss_function(reconstructed, points, mu, logvar)
-            
-            # Compute contrastive loss
             contrastive_loss = self.criterion(projected, labels)
             
-            # Total loss
             loss = vae_loss + contrastive_loss
             loss.backward()
             self.optimizer.step()
@@ -99,7 +89,6 @@ class ShapeTrainer:
         with torch.no_grad():
             for data in tqdm(self.val_loader):
                 points, labels = data['points'].to(self.device), data['label'].to(self.device)
-                points = points.view(points.size(0), -1)  # Flatten the point cloud data
                 reconstructed, mu, logvar, projected = self.model(points)
                 
                 vae_loss = self.model.loss_function(reconstructed, points, mu, logvar)

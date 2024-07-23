@@ -1,93 +1,52 @@
-import random
 import numpy as np
+import random
 
-def center(points):
-    points = points - points.mean(axis=-2, keepdims=True)
-    return points
+import numpy as np
+import random
 
-def normalize(points):
-    scale = (1 / np.abs(points).max()) * 0.9999999
-    points = points * scale
-    return points
+def random_rotation(point_cloud):
+    # Calculate the centroid of the point cloud
+    centroid = np.mean(point_cloud, axis=1, keepdims=True)
 
-class RandomCompose:
-    def __init__(self, *transforms, num_compositions=2):
-        assert all([callable(t) for t in transforms])
-        assert len(transforms) > num_compositions
-        self.transforms = list(transforms)
-        self.num_compositions = num_compositions
+    # Center the point cloud at the origin
+    centered_point_cloud = point_cloud - centroid
 
-    def __call__(self, tensors):
-        transforms = random.sample(self.transforms, self.num_compositions)
-        intermediate = tensors
-        for transform in transforms:
-            intermediate = transform(intermediate)
-        return intermediate
+    # Generate random rotation angles
+    angles = np.random.uniform(0, 2*np.pi, size=3)
+    cos_vals = np.cos(angles)
+    sin_vals = np.sin(angles)
 
-class SymmetryTransform:
-    def __call__(self, tensor):
-        axis = np.random.randint(0, 2, 3, dtype=bool)
-        for i, ax in enumerate(axis):
-            if ax:
-                tensor[:, i] = np.max(tensor[:, i]) - tensor[:, i]
-        return tensor
+    # Rotation matrices for x, y, z
+    Rx = np.array([[1, 0, 0],
+                   [0, cos_vals[0], -sin_vals[0]],
+                   [0, sin_vals[0], cos_vals[0]]])
 
-class AnisotropicScaleTransform:
-    def __init__(self, low_scale=0.9, high_scale=1.1):
-        self.low_scale = low_scale
-        self.high_scale = high_scale
+    Ry = np.array([[cos_vals[1], 0, sin_vals[1]],
+                   [0, 1, 0],
+                   [-sin_vals[1], 0, cos_vals[1]]])
 
-    def __call__(self, tensor):
-        scale_diff = self.high_scale - self.low_scale
-        scales = self.low_scale + np.random.rand(3) * (scale_diff)
-        return tensor * scales
+    Rz = np.array([[cos_vals[2], -sin_vals[2], 0],
+                   [sin_vals[2], cos_vals[2], 0],
+                   [0, 0, 1]])
 
-class AxisRotationTransform:
-    def __init__(self, x_rot=15, y_rot=15, z_rot=15):
-        self.rot_angles = [x_rot, y_rot, z_rot]
+    # Combined rotation matrix
+    R = np.dot(np.dot(Rz, Ry), Rx)
 
-    @staticmethod
-    def compute_rot_matrix(phi, shuffle=False):
-        x = np.array(
-            [[1, 0, 0],
-             [0, np.cos(phi[0]), -np.sin(phi[0])],
-             [0, np.sin(phi[0]), np.cos(phi[0])]]
-        )
+    # Transpose point cloud for multiplication, rotate and transpose back
+    centered_point_cloud = centered_point_cloud.T
+    rotated_point_cloud = np.dot(centered_point_cloud, R.T).T
 
-        y = np.array(
-            [[np.cos(phi[1]), 0, np.sin(phi[1])],
-             [0, 1, 0],
-             [-np.sin(phi[1]), 0, np.cos(phi[1])]]
-        )
+    # Move the point cloud back to its original centroid
+    rotated_point_cloud += centroid
+    return rotated_point_cloud
 
-        z = np.array(
-            [[np.cos(phi[2]), -np.sin(phi[2]), 0],
-             [np.sin(phi[2]), np.cos(phi[2]), 0],
-             [0, 0, 1]]
-        )
+def jitter(point_cloud, sigma=0.01, clip=0.05):
+    jittered_data = np.clip(sigma * np.random.randn(*point_cloud.shape), -clip, clip)
+    jittered_point_cloud = point_cloud + jittered_data
+    return jittered_point_cloud
 
-        mat = [x, y, z]
-        if shuffle:
-            random.shuffle(mat)
-        rotation_matrix = np.matmul(mat[2], np.matmul(mat[1], mat[0]))
-        return rotation_matrix
 
-    def __call__(self, tensor):
-        phi = np.zeros(3)
-        for i, angle in enumerate(self.rot_angles):
-            if angle > 0:
-                phi[i] = float(2 * random.random() * angle - angle) / 180. * np.pi
-        rot_matrix = self.compute_rot_matrix(phi, shuffle=True)
-        return tensor @ rot_matrix.T
-
-def get_transform():
-    return RandomCompose(
-        center,
-        normalize,
-        SymmetryTransform(),
-        AnisotropicScaleTransform(),
-        AxisRotationTransform()
-    )
-
-def augment_point_cloud(point_cloud, transform):
+def random_transform(point_cloud):
+    transforms = [random_rotation, jitter]
+    transform = random.choice(transforms)
     return transform(point_cloud)
