@@ -1,12 +1,15 @@
-import numpy as np
-import random
 
 import numpy as np
 import random
+
+def normalize(points):
+    scale = (1 / np.abs(points).max()) * 0.9999999
+    points = points * scale
+    return points
 
 def random_rotation(point_cloud):
     # Calculate the centroid of the point cloud
-    centroid = np.mean(point_cloud, axis=1, keepdims=True)
+    centroid = np.mean(point_cloud, axis=0, keepdims=True)
 
     # Center the point cloud at the origin
     centered_point_cloud = point_cloud - centroid
@@ -32,9 +35,8 @@ def random_rotation(point_cloud):
     # Combined rotation matrix
     R = np.dot(np.dot(Rz, Ry), Rx)
 
-    # Transpose point cloud for multiplication, rotate and transpose back
-    centered_point_cloud = centered_point_cloud.T
-    rotated_point_cloud = np.dot(centered_point_cloud, R.T).T
+    # Rotate the point cloud
+    rotated_point_cloud = np.dot(centered_point_cloud, R.T)
 
     # Move the point cloud back to its original centroid
     rotated_point_cloud += centroid
@@ -50,3 +52,4 @@ def random_transform(point_cloud):
     transforms = [random_rotation, jitter]
     transform = random.choice(transforms)
     return transform(point_cloud)
+

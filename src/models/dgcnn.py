@@ -61,6 +61,7 @@ class DGCNN(nn.Module):
 
     def forward(self, x):
         batch_size = x.size(0)
+        x = x.transpose(1, 2)  # Change input from [batch_size, num_points, 3] to [batch_size, 3, num_points]
         x = get_graph_feature(x, k=self.k)
         x = F.relu(self.bn1(self.conv1(x)))
         x1 = x.max(dim=-1, keepdim=False)[0]
