@@ -38,8 +38,9 @@ class ShapeTrainer:
         emb_dims = self.config['model']['kwargs']['emb_dims']
         num_points = self.config['model']['kwargs']['num_points']
         temperature = self.config['criterion']['temperature']
+        use_contrastive_loss = self.config['use_contrastive_loss']
 
-        self.model = ContrastiveVAE(latent_dim=latent_dim, projection_dim=projection_dim, k=k, emb_dims=emb_dims, num_points=num_points, temperature=temperature)
+        self.model = ContrastiveVAE(latent_dim=latent_dim, projection_dim=projection_dim, k=k, emb_dims=emb_dims, num_points=num_points, temperature=temperature, use_contrastive_loss=use_contrastive_loss)
         self.model = self.model.to(self.device)
 
         if torch.cuda.device_count() > 1:
@@ -81,16 +82,19 @@ class ShapeTrainer:
 
                 self.optimizer.zero_grad()
 
-                concatenated_batch = torch.cat([augmented_pc1, augmented_pc2], dim=0)
-                if torch.cuda.device_count() > 1:
-                    projected_concatenated = self.model.module.fc_projection(self.model.module.encoder(concatenated_batch))
-                else:
-                    projected_concatenated = self.model.fc_projection(self.model.encoder(concatenated_batch))
+                if self.config['use_contrastive_loss']:
+                    concatenated_batch = torch.cat([augmented_pc1, augmented_pc2], dim=0)
+                    if torch.cuda.device_count() > 1:
+                        projected_concatenated = self.model.module.fc_projection(self.model.module.encoder(concatenated_batch))
+                    else:
+                        projected_concatenated = self.model.fc_projection(self.model.encoder(concatenated_batch))
 
-                batch_size = original_pc.size(0)
-                contrastive_labels = torch.arange(batch_size).repeat(2).to(self.device)
-                
-                reconstructed, mu, logvar, _ = self.model(original_pc)
+                    batch_size = original_pc.size(0)
+                    contrastive_labels = torch.arange(batch_size).repeat(2).to(self.device)
+                else:
+                    projected_concatenated, contrastive_labels = None, None
+
+                reconstructed, mu, logvar, z, _  = self.model(original_pc)
                 if torch.cuda.device_count() > 1:
                     loss, rec_loss, kld, contrastive_loss = self.model.module.loss_function(reconstructed, original_pc, mu, logvar, projected_concatenated, contrastive_labels, self.loss_weights)
                 else:
@@ -102,13 +106,14 @@ class ShapeTrainer:
                 total_loss += loss.item()
                 total_rec_loss += rec_loss.item()
                 total_kld_loss += kld.item()
-                total_contrastive_loss += contrastive_loss.item()
+                if self.config['use_contrastive_loss']:
+                    total_contrastive_loss += contrastive_loss.item()
 
                 progress_bar.set_postfix({
                     'Total Loss': total_loss / (iteration + 1),
                     'Rec Loss': total_rec_loss / (iteration + 1),
                     'KL Loss': total_kld_loss / (iteration + 1),
-                    'Contrastive Loss': total_contrastive_loss / (iteration + 1)
+                    'Contrastive Loss': total_contrastive_loss / (iteration + 1) if self.config['use_contrastive_loss'] else 'N/A'
                 })
 
             except Exception as e:
@@ -118,12 +123,13 @@ class ShapeTrainer:
         avg_loss = total_loss / len(self.train_loader)
         avg_rec_loss = total_rec_loss / len(self.train_loader)
         avg_kld_loss = total_kld_loss / len(self.train_loader)
-        avg_contrastive_loss = total_contrastive_loss / len(self.train_loader)
+        avg_contrastive_loss = total_contrastive_loss / len(self.train_loader) if self.config['use_contrastive_loss'] else 0
 
         self.writer.add_scalar('training/total_loss', avg_loss, self.epoch)
         self.writer.add_scalar('training/rec_loss', avg_rec_loss, self.epoch)
         self.writer.add_scalar('training/kld_loss', avg_kld_loss, self.epoch)
-        self.writer.add_scalar('training/contrastive_loss', avg_contrastive_loss, self.epoch)
+        if self.config['use_contrastive_loss']:
+            self.writer.add_scalar('training/contrastive_loss', avg_contrastive_loss, self.epoch)
 
         return avg_loss
 
@@ -140,16 +146,19 @@ class ShapeTrainer:
                 original_pc, augmented_pc1, augmented_pc2 = point_clouds[0].to(self.device), point_clouds[1].to(self.device), point_clouds[2].to(self.device)
                 labels = labels.to(self.device)
 
-                concatenated_batch = torch.cat([augmented_pc1, augmented_pc2], dim=0)
-                if torch.cuda.device_count() > 1:
-                    projected_concatenated = self.model.module.fc_projection(self.model.module.encoder(concatenated_batch))
-                else:
-                    projected_concatenated = self.model.fc_projection(self.model.encoder(concatenated_batch))
+                if self.config['use_contrastive_loss']:
+                    concatenated_batch = torch.cat([augmented_pc1, augmented_pc2], dim=0)
+                    if torch.cuda.device_count() > 1:
+                        projected_concatenated = self.model.module.fc_projection(self.model.module.encoder(concatenated_batch))
+                    else:
+                        projected_concatenated = self.model.fc_projection(self.model.encoder(concatenated_batch))
 
-                batch_size = original_pc.size(0)
-                contrastive_labels = torch.arange(batch_size).repeat(2).to(self.device)
-                
-                reconstructed, mu, logvar, _ = self.model(original_pc)
+                    batch_size = original_pc.size(0)
+                    contrastive_labels = torch.arange(batch_size).repeat(2).to(self.device)
+                else:
+                    projected_concatenated, contrastive_labels = None, None
+
+                reconstructed, mu, logvar, z, _ = self.model(original_pc)
                 if torch.cuda.device_count() > 1:
                     loss, rec_loss, kld, contrastive_loss = self.model.module.loss_function(reconstructed, original_pc, mu, logvar, projected_concatenated, contrastive_labels, self.loss_weights)
                 else:
@@ -158,12 +167,13 @@ class ShapeTrainer:
                 total_loss += loss.item()
                 total_rec_loss += rec_loss.item()
                 total_kld_loss += kld.item()
-                total_contrastive_loss += contrastive_loss.item()
+                if self.config['use_contrastive_loss']:
+                    total_contrastive_loss += contrastive_loss.item()
 
         avg_loss = total_loss / len(self.val_loader)
         avg_rec_loss = total_rec_loss / len(self.val_loader)
         avg_kld_loss = total_kld_loss / len(self.val_loader)
-        avg_contrastive_loss = total_contrastive_loss / len(self.val_loader)
+        avg_contrastive_loss = total_contrastive_loss / len(self.val_loader) if self.config['use_contrastive_loss'] else 0
 
         is_best = self.best_val_loss is None or avg_loss < self.best_val_loss
         if is_best:
@@ -173,7 +183,8 @@ class ShapeTrainer:
         self.writer.add_scalar('validation/total_loss', avg_loss, self.epoch)
         self.writer.add_scalar('validation/rec_loss', avg_rec_loss, self.epoch)
         self.writer.add_scalar('validation/kld_loss', avg_kld_loss, self.epoch)
-        self.writer.add_scalar('validation/contrastive_loss', avg_contrastive_loss, self.epoch)
+        if self.config['use_contrastive_loss']:
+            self.writer.add_scalar('validation/contrastive_loss', avg_contrastive_loss, self.epoch)
 
         return avg_loss
 

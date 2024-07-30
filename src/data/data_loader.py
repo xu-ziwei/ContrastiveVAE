@@ -7,25 +7,6 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from data.augmentation import random_transform, normalize
 
-class PointCloudDataset(Dataset):
-    def __init__(self, point_clouds, augmented_pc1, augmented_pc2, labels):
-        self.point_clouds = point_clouds
-        self.augmented_pc1 = augmented_pc1
-        self.augmented_pc2 = augmented_pc2
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.point_clouds)
-
-    def __getitem__(self, idx):
-        point_cloud = self.point_clouds[idx]
-        augmented_pc1 = self.augmented_pc1[idx]
-        augmented_pc2 = self.augmented_pc2[idx]
-        label = self.labels[idx]
-
-        return (torch.tensor(point_cloud, dtype=torch.float32),
-                torch.tensor(augmented_pc1, dtype=torch.float32),
-                torch.tensor(augmented_pc2, dtype=torch.float32)), torch.tensor(label, dtype=torch.long)
 
 def load_data_from_h5(filename):
     with h5py.File(filename, 'r') as f:
@@ -59,18 +40,6 @@ def load_data_from_h5(filename):
             val_point_clouds, augmented_val_pc1, augmented_val_pc2, val_labels,
             test_point_clouds, augmented_test_pc1, augmented_test_pc2, test_labels)
 
-def get_data_loaders(train_point_clouds, augmented_train_pc1, augmented_train_pc2, train_labels, 
-                     val_point_clouds, augmented_val_pc1, augmented_val_pc2, val_labels,
-                     test_point_clouds, augmented_test_pc1, augmented_test_pc2, test_labels, batch_size=32):
-    train_dataset = PointCloudDataset(train_point_clouds, augmented_train_pc1, augmented_train_pc2, train_labels)
-    val_dataset = PointCloudDataset(val_point_clouds, augmented_val_pc1, augmented_val_pc2, val_labels)
-    test_dataset = PointCloudDataset(test_point_clouds, augmented_test_pc1, augmented_test_pc2, test_labels)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True)
-    
-    return train_loader, val_loader, test_loader
 
 def save_augmented_data_to_h5(input_filename, output_filename):
     with h5py.File(input_filename, 'r') as f:
@@ -228,3 +197,33 @@ def get_data_loaders_in_memory(filename, batch_size=32, num_workers=16):
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
     
     return train_loader, val_loader
+
+def load_test_from_h5_in_memory(filename):
+    with h5py.File(filename, 'r') as f:
+        test_point_clouds = f['test/point_clouds'][:]
+        test_labels = f['test/labels'][:]
+    return (test_point_clouds, test_labels)
+
+
+class TestDataset(Dataset):
+    def __init__(self, point_clouds, labels):
+        self.point_clouds = torch.tensor(point_clouds, dtype=torch.float32)
+
+        self.labels = torch.tensor(labels, dtype=torch.long)
+
+    def __len__(self):
+        return len(self.point_clouds)
+
+    def __getitem__(self, idx):
+        return (self.point_clouds[idx], self.labels[idx])
+    
+def get_test_loaders_in_memory(filename, batch_size=32, num_workers=16):
+    (test_point_clouds, test_labels) = load_test_from_h5_in_memory(filename)
+    
+    test_dataset = TestDataset(test_point_clouds, test_labels)
+
+    pin_memory = torch.cuda.is_available()
+
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+
+    return test_loader
