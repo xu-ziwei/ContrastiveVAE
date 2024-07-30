@@ -3,9 +3,11 @@ import numpy as np
 import random
 
 def normalize(points):
-    scale = (1 / np.abs(points).max()) * 0.9999999
-    points = points * scale
-    return points
+    mean = np.mean(points, axis=0)
+    centered_points = points - mean
+    scale = (1 / np.abs(centered_points).max()) * 0.9999999
+    normalized_points = centered_points * scale
+    return normalized_points
 
 def random_rotation(point_cloud):
     # Calculate the centroid of the point cloud
