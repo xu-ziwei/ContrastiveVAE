@@ -1,5 +1,6 @@
-import os
 import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src')))
 import torch
 import yaml
 from torch.utils.tensorboard import SummaryWriter
@@ -42,6 +43,9 @@ class ShapeTrainer:
 
         self.model = ContrastiveVAE(latent_dim=latent_dim, projection_dim=projection_dim, k=k, emb_dims=emb_dims, num_points=num_points, temperature=temperature, use_contrastive_loss=use_contrastive_loss)
         self.model = self.model.to(self.device)
+
+        # print model
+        print(self.model)
 
         if torch.cuda.device_count() > 1:
             print(f"Using {torch.cuda.device_count()} GPUs")
@@ -207,6 +211,6 @@ if __name__ == '__main__':
     path_to_config = sys.argv[1]
     with open(path_to_config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-
+    print(f'device check: {torch.cuda.is_available()}')
     trainer = ShapeTrainer(config)
     trainer.run()
