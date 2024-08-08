@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .dgcnn import DGCNN
 from .ChamferLoss import ChamferLoss
-from .decoder import FoldNetDecoder
+from .decoder import FoldNetDecoder, SimpleTestDecoder
 from pytorch_metric_learning import losses 
 
 # ContrastiveVAE class
@@ -22,7 +22,9 @@ class ContrastiveVAE(nn.Module):
             self.contrastive_loss = losses.NTXentLoss(temperature=self.temperature)
         
         self.chamfer_loss = ChamferLoss()
-        self.decoder = FoldNetDecoder(num_features=latent_dim, num_points=num_points, std=std)
+        # self.decoder = FoldNetDecoder(num_features=latent_dim, num_points=num_points, std=std)
+        # use test decoder 
+        self.decoder = SimpleTestDecoder(latent_dim=latent_dim, output_points=num_points)
 
     def encode(self, x):
         features = self.encoder(x)
@@ -48,9 +50,13 @@ class ContrastiveVAE(nn.Module):
     def loss_function(self, recon_x, x, mu, logvar, projected_concatenated=None, contrastive_labels=None, weights=None):
         Rec_loss = self.chamfer_loss(recon_x, x)
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        total_loss = weights['Rec_loss'] * Rec_loss + weights['KLD'] * KLD
+        w_Rec_loss = weights['Rec_loss'] * Rec_loss
+        w_KLD = weights['KLD'] * KLD
+        total_loss =  w_Rec_loss + w_KLD
         contrastive_loss = None
+        w_contrastive_loss = None
         if self.use_contrastive_loss:
             contrastive_loss = self.contrastive_loss(projected_concatenated, contrastive_labels)
-            total_loss += weights['contrastive_loss'] * contrastive_loss
-        return total_loss, Rec_loss, KLD, contrastive_loss
+            w_contrastive_loss = weights['contrastive_loss'] * contrastive_loss
+            total_loss += w_contrastive_loss
+        return total_loss, w_Rec_loss, w_KLD, w_contrastive_loss

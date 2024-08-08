@@ -43,43 +43,58 @@ def get_graph_feature(x, k=20, idx=None):
     return feature
 
 class DGCNN(nn.Module):
-    def __init__(self, k=20, emb_dims=1024):
+    def __init__(self, k=20, emb_dims=512):
         super(DGCNN, self).__init__()
         self.k = k
         self.emb_dims = emb_dims
 
-        self.conv1 = nn.Conv2d(6, 64, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.conv2 = nn.Conv2d(128, 64, kernel_size=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(128, 128, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.conv4 = nn.Conv2d(256, 256, kernel_size=1, bias=False)
-        self.bn4 = nn.BatchNorm2d(256)
-        self.conv5 = nn.Conv1d(512, self.emb_dims, kernel_size=1, bias=False)
-        self.bn5 = nn.BatchNorm1d(self.emb_dims)
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(6, 64, kernel_size=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(negative_slope=0.2)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(128, 64, kernel_size=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(negative_slope=0.2)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(128, 128, kernel_size=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(negative_slope=0.2)
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(256, 256, kernel_size=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(negative_slope=0.2)
+        )
+        self.conv5 = nn.Sequential(
+            nn.Conv1d(512, self.emb_dims, kernel_size=1, bias=False),
+            nn.BatchNorm1d(self.emb_dims),
+            nn.LeakyReLU(negative_slope=0.2)
+        )
 
     def forward(self, x):
         batch_size = x.size(0)
         x = x.transpose(1, 2)  # Change input from [batch_size, num_points, 3] to [batch_size, 3, num_points]
         x = get_graph_feature(x, k=self.k)
-        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.conv1(x)
         x1 = x.max(dim=-1, keepdim=False)[0]
 
         x = get_graph_feature(x1, k=self.k)
-        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.conv2(x)
         x2 = x.max(dim=-1, keepdim=False)[0]
 
         x = get_graph_feature(x2, k=self.k)
-        x = F.relu(self.bn3(self.conv3(x)))
+        x = self.conv3(x)
         x3 = x.max(dim=-1, keepdim=False)[0]
 
         x = get_graph_feature(x3, k=self.k)
-        x = F.relu(self.bn4(self.conv4(x)))
+        x = self.conv4(x)
         x4 = x.max(dim=-1, keepdim=False)[0]
 
         x = torch.cat((x1, x2, x3, x4), dim=1)
-        x = F.relu(self.bn5(self.conv5(x)))
+        x = self.conv5(x)
         x = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
 
         return x

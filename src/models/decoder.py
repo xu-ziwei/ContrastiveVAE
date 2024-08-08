@@ -47,3 +47,22 @@ class FoldNetDecoder(nn.Module):
         folding_result2 = self.folding2(cat2)
         output = folding_result2.transpose(1, 2)
         return output
+
+
+
+class SimpleTestDecoder(nn.Module):
+    def __init__(self, latent_dim=128, output_points=2048):
+        super(SimpleTestDecoder, self).__init__()
+        self.latent_dim = latent_dim
+        self.output_points = output_points
+
+        self.fc1 = nn.Linear(latent_dim, 512)
+        self.fc2 = nn.Linear(512, 1024)
+        self.fc3 = nn.Linear(1024, output_points * 3)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = self.fc3(x)
+        x = x.view(-1, self.output_points, 3)
+        return x
