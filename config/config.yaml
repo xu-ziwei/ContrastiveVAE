@@ -1,19 +1,19 @@
 device: 'cuda'  # or 'cpu' if you do not have a GPU
-experiment_dir: '/home/ljd567/datadir/vae_experiment_test/'
+experiment_dir: '/home/ljd567/datadir/AE_experiment_swd_5/'  # Updated directory name to reflect AE
 
 data:
   path: '/home/ljd567/datadir/ContrastiveVAE_Data/data_nor.h5'
 
 loader:
-  batch_size: 64
+  batch_size: 16
   shuffle: True
   num_workers: 32
 
 model:
-  name: 'ContrastiveVAE'
+  name: 'ContrastiveAE'  # Updated model name to AE
   kwargs:
     latent_dim: 128
-    projection_dim: 64
+    projection_dim: 64  # Keep this if you use contrastive loss
     k: 20
     emb_dims: 512  # This is the dimension of the feature space after encoding the point cloud
     num_points: 2048
@@ -24,14 +24,14 @@ optimizer:
     lr: 0.001
     weight_decay: 0.00001
 
+# Criterion and loss weights remain if you are using contrastive learning
 criterion:
   name: 'NTXentLoss'
-  temperature: 0.5
+  temperature: 0.01
 
 loss_weights:
-  Rec_loss: 100
-  KLD: 0.1
-  contrastive_loss: 1.0
+  Rec_loss: 5  # Reconstruction loss weight
+  contrastive_loss: 0.5  # Only relevant if using contrastive loss
 
 training:
   epochs: 100
@@ -39,6 +39,6 @@ training:
   checkpoint_every: 5
 
 tensorboard:
-  log_dir: '/home/ljd567/datadir/vae_experiment_test/tensorboard'
+  log_dir: '/home/ljd567/datadir/AE_experiment_swd_5/tensorboard'  # Updated directory name to reflect AE
 
-use_contrastive_loss: false
+use_contrastive_loss: True  # Keep as true if you want to use contrastive learning
