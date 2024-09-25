@@ -5,6 +5,7 @@ from .dgcnn import DGCNN
 from .ChamferLoss import ChamferLoss
 from .decoder import FoldNetDecoder, SimpleTestDecoder
 from pytorch_metric_learning import losses 
+from .sw_Loss import SWD
 
 # ContrastiveVAE class
 
@@ -20,8 +21,9 @@ class ContrastiveVAE(nn.Module):
             self.temperature = temperature
             self.fc_projection = nn.Linear(emb_dims, projection_dim)
             self.contrastive_loss = losses.NTXentLoss(temperature=self.temperature)
-        
-        self.chamfer_loss = ChamferLoss()
+
+        self.swd_loss = SWD(num_projs=100, device="cuda")
+        # self.chamfer_loss = ChamferLoss()
         # self.decoder = FoldNetDecoder(num_features=latent_dim, num_points=num_points, std=std)
         # use test decoder 
         self.decoder = SimpleTestDecoder(latent_dim=latent_dim, output_points=num_points)
@@ -48,7 +50,7 @@ class ContrastiveVAE(nn.Module):
         return reconstructed, mu, logvar, z, projected
 
     def loss_function(self, recon_x, x, mu, logvar, projected_concatenated=None, contrastive_labels=None, weights=None):
-        Rec_loss = self.chamfer_loss(recon_x, x)
+        Rec_loss = self.swd_loss(recon_x, x)
         KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         w_Rec_loss = weights['Rec_loss'] * Rec_loss
         w_KLD = weights['KLD'] * KLD
@@ -60,3 +62,18 @@ class ContrastiveVAE(nn.Module):
             w_contrastive_loss = weights['contrastive_loss'] * contrastive_loss
             total_loss += w_contrastive_loss
         return total_loss, w_Rec_loss, w_KLD, w_contrastive_loss
+    
+
+    '''
+     # add gamma to balance 
+        gamma = torch.sqrt(Rec_loss + 1e-10)
+
+        # Ensure gamma is a tensor for torch.log
+        log_gamma = torch.log(gamma)
+        log_two_pi = torch.log(torch.tensor(2.0 * torch.pi))
+        w_Rec_loss = (Rec_loss / (2 * gamma**2)) + log_gamma + 0.5 * log_two_pi
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        # w_Rec_loss = weights['Rec_loss'] * Rec_loss
+
+        w_KLD = weights['KLD'] * KLD
+    '''
