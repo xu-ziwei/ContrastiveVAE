@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import torch.optim as optim
 from models.ContrastiveAE import ContrastiveAE
-from data.data_loader import get_data_loaders_in_memory
+from data.data_loader import get_data_loaders_in_memory, get_pc_data_loaders_in_memory
 
 
 class ShapeTrainer:
@@ -30,7 +30,12 @@ class ShapeTrainer:
         data_path = self.config['data']['path']
         batch_size = self.config['loader']['batch_size']
         num_workers = self.config['loader']['num_workers']
-        self.train_loader, self.val_loader = get_data_loaders_in_memory(data_path, batch_size=batch_size, num_workers=num_workers)
+
+        if self.config['use_contrastive_loss']:
+            self.train_loader, self.val_loader = get_data_loaders_in_memory(data_path, batch_size=batch_size, num_workers=num_workers)
+        else:
+            self.train_loader, self.val_loader = get_pc_data_loaders_in_memory(data_path, batch_size=batch_size, num_workers=num_workers)
+
 
     def build_model(self):
         latent_dim = self.config['model']['kwargs']['latent_dim']
@@ -78,34 +83,46 @@ class ShapeTrainer:
         total_contrastive_loss = 0.0
         progress_bar = tqdm(self.train_loader, desc='Iteration')
 
-        for iteration, (point_clouds, labels) in enumerate(progress_bar):
+        for iteration, point_clouds in enumerate(progress_bar):
             try:
-                original_pc, augmented_pc1, augmented_pc2 = point_clouds[0].to(self.device, non_blocking=True), point_clouds[1].to(self.device, non_blocking=True), point_clouds[2].to(self.device, non_blocking=True)
-                labels = labels.to(self.device, non_blocking=True)
-
-                self.optimizer.zero_grad()
-
                 if self.config['use_contrastive_loss']:
+                    # When using contrastive loss, the loader returns a tuple of (original, augmented1, augmented2)
+                    original_pc = point_clouds[0].to(self.device, non_blocking=True)
+                    augmented_pc1 = point_clouds[1].to(self.device, non_blocking=True)
+                    augmented_pc2 = point_clouds[2].to(self.device, non_blocking=True)
+                    
+                    # Combine augmented1 and augmented2 for contrastive learning
                     concatenated_batch = torch.cat([augmented_pc1, augmented_pc2], dim=0)
+                    labels = torch.arange(original_pc.size(0)).repeat(2).to(self.device)  # Contrastive labels
+
+                    # Forward pass with concatenated data for contrastive learning
                     if torch.cuda.device_count() > 1:
                         projected_concatenated = self.model.module.fc_projection(self.model.module.encoder(concatenated_batch))
                     else:
                         projected_concatenated = self.model.fc_projection(self.model.encoder(concatenated_batch))
 
-                    batch_size = original_pc.size(0)
-                    contrastive_labels = torch.arange(batch_size).repeat(2).to(self.device)
+                    contrastive_labels = torch.arange(original_pc.size(0)).repeat(2).to(self.device)
                 else:
-                    projected_concatenated, contrastive_labels = None, None
+                    # When not using contrastive loss, only the original point cloud is returned
+                    original_pc = point_clouds.to(self.device, non_blocking=True)
+                    projected_concatenated, contrastive_labels = None, None  # No contrastive inputs needed
 
-                reconstructed, latent, _ = self.model(original_pc)  # Updated to match AE outputs
+                self.optimizer.zero_grad()
+
+                # Forward pass through the autoencoder (with or without contrastive components)
+                reconstructed, latent, _ = self.model(original_pc)
+
+                # Calculate the loss
                 if torch.cuda.device_count() > 1:
                     loss, rec_loss, contrastive_loss = self.model.module.loss_function(reconstructed, original_pc, latent, projected_concatenated, contrastive_labels, self.loss_weights)
                 else:
                     loss, rec_loss, contrastive_loss = self.model.loss_function(reconstructed, original_pc, latent, projected_concatenated, contrastive_labels, self.loss_weights)
 
+                # Backward pass and optimization
                 loss.backward()
                 self.optimizer.step()
 
+                # Update loss values
                 total_loss += loss.item()
                 total_rec_loss += rec_loss.item()
                 if self.config['use_contrastive_loss']:
@@ -140,28 +157,36 @@ class ShapeTrainer:
         total_rec_loss = 0.0
         total_contrastive_loss = 0.0
         with torch.no_grad():
-            for point_clouds, labels in tqdm(self.val_loader):
-                original_pc, augmented_pc1, augmented_pc2 = point_clouds[0].to(self.device), point_clouds[1].to(self.device), point_clouds[2].to(self.device)
-                labels = labels.to(self.device)
-
+            for point_clouds in tqdm(self.val_loader):
                 if self.config['use_contrastive_loss']:
+                    # When using contrastive loss
+                    original_pc = point_clouds[0].to(self.device)
+                    augmented_pc1 = point_clouds[1].to(self.device)
+                    augmented_pc2 = point_clouds[2].to(self.device)
+
+                    # Combine augmented1 and augmented2 for contrastive learning
                     concatenated_batch = torch.cat([augmented_pc1, augmented_pc2], dim=0)
                     if torch.cuda.device_count() > 1:
                         projected_concatenated = self.model.module.fc_projection(self.model.module.encoder(concatenated_batch))
                     else:
                         projected_concatenated = self.model.fc_projection(self.model.encoder(concatenated_batch))
 
-                    batch_size = original_pc.size(0)
-                    contrastive_labels = torch.arange(batch_size).repeat(2).to(self.device)
+                    contrastive_labels = torch.arange(original_pc.size(0)).repeat(2).to(self.device)
                 else:
-                    projected_concatenated, contrastive_labels = None, None
+                    # When not using contrastive loss
+                    original_pc = point_clouds.to(self.device)
+                    projected_concatenated, contrastive_labels = None, None  # No contrastive inputs
 
-                reconstructed, latent, _ = self.model(original_pc)  # Updated to match AE outputs
+                # Forward pass through the autoencoder
+                reconstructed, latent, _ = self.model(original_pc)
+
+                # Calculate the loss
                 if torch.cuda.device_count() > 1:
                     loss, rec_loss, contrastive_loss = self.model.module.loss_function(reconstructed, original_pc, latent, projected_concatenated, contrastive_labels, self.loss_weights)
                 else:
                     loss, rec_loss, contrastive_loss = self.model.loss_function(reconstructed, original_pc, latent, projected_concatenated, contrastive_labels, self.loss_weights)
 
+                # Update loss values
                 total_loss += loss.item()
                 total_rec_loss += rec_loss.item()
                 if self.config['use_contrastive_loss']:

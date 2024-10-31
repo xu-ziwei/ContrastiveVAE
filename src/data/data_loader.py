@@ -3,7 +3,7 @@ import io
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 from sklearn.model_selection import train_test_split
 from data.augmentation import random_transform, normalize
 
@@ -156,7 +156,8 @@ def save_nor_data_to_h5(input_filename, output_filename):
 
 
 # only for training data 
-class InMemoryPointCloudDataset(Dataset):
+class InMemoryPointCloudDataset_C(Dataset):
+    # for contrastive loss
     def __init__(self, point_clouds, augmented_pc1, augmented_pc2, labels):
         self.point_clouds = torch.tensor(point_clouds, dtype=torch.float32)
         self.augmented_pc1 = torch.tensor(augmented_pc1, dtype=torch.float32)
@@ -188,8 +189,8 @@ def get_data_loaders_in_memory(filename, batch_size=32, num_workers=16):
     (train_point_clouds, augmented_train_pc1, augmented_train_pc2, train_labels, 
      val_point_clouds, augmented_val_pc1, augmented_val_pc2, val_labels) = load_data_from_h5_in_memory(filename)
     
-    train_dataset = InMemoryPointCloudDataset(train_point_clouds, augmented_train_pc1, augmented_train_pc2, train_labels)
-    val_dataset = InMemoryPointCloudDataset(val_point_clouds, augmented_val_pc1, augmented_val_pc2, val_labels)
+    train_dataset = InMemoryPointCloudDataset_C(train_point_clouds, augmented_train_pc1, augmented_train_pc2, train_labels)
+    val_dataset = InMemoryPointCloudDataset_C(val_point_clouds, augmented_val_pc1, augmented_val_pc2, val_labels)
 
     pin_memory = torch.cuda.is_available()
 
@@ -198,32 +199,57 @@ def get_data_loaders_in_memory(filename, batch_size=32, num_workers=16):
     
     return train_loader, val_loader
 
-def load_test_from_h5_in_memory(filename):
-    with h5py.File(filename, 'r') as f:
-        test_point_clouds = f['test/point_clouds'][:]
-        test_labels = f['test/labels'][:]
-    return (test_point_clouds, test_labels)
-
-
-class TestDataset(Dataset):
-    def __init__(self, point_clouds, labels):
+class InMemoryPointCloudDataset(Dataset):
+    def __init__(self, point_clouds):
         self.point_clouds = torch.tensor(point_clouds, dtype=torch.float32)
-
-        self.labels = torch.tensor(labels, dtype=torch.long)
 
     def __len__(self):
         return len(self.point_clouds)
 
     def __getitem__(self, idx):
-        return (self.point_clouds[idx], self.labels[idx])
-    
-def get_test_loaders_in_memory(filename, batch_size=32, num_workers=16):
-    (test_point_clouds, test_labels) = load_test_from_h5_in_memory(filename)
-    
-    test_dataset = TestDataset(test_point_clouds, test_labels)
+        return self.point_clouds[idx]
 
+
+def load_pc_data_from_h5_in_memory(filename):
+    with h5py.File(filename, 'r') as f:
+        point_clouds = f['data/point_clouds'][:]  # Assume all point clouds are in a single group
+    
+    return point_clouds
+
+def get_pc_data_loaders_in_memory(filename, batch_size=32, num_workers=16, val_split=0.2):
+    # Load the point clouds from the H5 file
+    point_clouds = load_pc_data_from_h5_in_memory(filename)
+    
+    # Create a dataset from all the point clouds
+    dataset = InMemoryPointCloudDataset(point_clouds)
+    
+    # Calculate the number of samples for training and validation
+    dataset_size = len(dataset)
+    val_size = int(val_split * dataset_size)
+    train_size = dataset_size - val_size
+    
+    # Randomly split the dataset into training and validation sets
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    
     pin_memory = torch.cuda.is_available()
 
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+    # Create dataloaders
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
 
-    return test_loader
+    return train_loader, val_loader
+
+
+def get_full_dataset_loader(filename, batch_size=32, num_workers=32):
+    # Load the point clouds from the H5 file
+    point_clouds = load_pc_data_from_h5_in_memory(filename)
+    
+    # Create a dataset from all the point clouds
+    dataset = InMemoryPointCloudDataset(point_clouds)
+    
+    pin_memory = torch.cuda.is_available()
+
+    # Create a dataloader for the entire dataset without splitting
+    full_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+
+    return full_loader
